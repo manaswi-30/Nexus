@@ -1,4 +1,5 @@
-
+from dotenv import load_dotenv
+load_dotenv()
 import os, time, json, random, asyncio, math
 from typing import Dict, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException

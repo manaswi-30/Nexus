@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-
+import OfficerRay from "./components/OfficerRay";
 const API_BASE = "http://localhost:8000";
 const WS_URL   = "ws://localhost:8000/ws";
 
@@ -349,6 +349,7 @@ export default function App() {
             <span style={{ fontSize: 11, color: status === "connected" ? "#4ade80" : "#f87171" }}>
               {status === "connected" ? "Live" : status}
             </span>
+            <OfficerRay />
           </div>
         </div>
       </div>
