@@ -1,45 +1,37 @@
-version: "3.9"
+version: "3.8"
 
 services:
-
-  # ── RL Training (run once, outputs model to ./models/) ──────────────────────
-  nexus-trainer:
-    build:
-      context: .
-      dockerfile: simulation/Dockerfile
-    volumes:
-      - ./models:/app/models
-      - ./logs:/app/logs
-    command: python simulation/train_agent.py
-    profiles: ["train"]   # only runs with: docker-compose --profile train up
-
-  # ── FastAPI Backend ─────────────────────────────────────────────────────────
-  nexus-api:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./models:/app/models
+  db:
+    image: postgres:15
+    container_name: nexus_db
     environment:
-      - MODEL_PATH=/app/models/nexus_agent
-      - PYTHONUNBUFFERED=1
+      POSTGRES_USER: nexus_user
+      POSTGRES_PASSWORD: nexus_pass
+      POSTGRES_DB: nexus_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexus_postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      test: ["CMD-SHELL", "pg_isready -U nexus_user -d nexus_db"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
 
-  # ── React Dashboard ─────────────────────────────────────────────────────────
-  nexus-dashboard:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+  backend:
+    build: ./backend
+    container_name: nexus_backend
+    environment:
+      DATABASE_URL: postgresql://nexus_user:nexus_pass@db:5432/nexus_db
     ports:
-      - "3000:80"
+      - "8000:8000"
     depends_on:
-      nexus-api:
+      db:
         condition: service_healthy
+    volumes:
+      - ./backend:/app
     restart: unless-stopped
+
+volumes:
+  nexus_postgres_data:
