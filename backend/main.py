@@ -6,8 +6,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import numpy as np
+from backend.api.auth import router as auth_router
 
-app = FastAPI(title="NEXUS Traffic API v2.0", version="2.0.0")
+app = FastAPI(title="NEXUS Traffic API ", version="2.0.0")
+app.include_router(auth_router)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 PHASE_NAMES  = {0: "NS_GREEN", 1: "EW_GREEN", 2: "NS_LEFT", 3: "EW_LEFT"}
