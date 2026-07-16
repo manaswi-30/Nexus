@@ -436,8 +436,6 @@ scripts/
 
 \- Cloud deployment
 
-\- Predictive congestion forecasting
-
 
 
 \---
