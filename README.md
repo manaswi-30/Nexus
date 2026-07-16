@@ -1,237 +1,464 @@
-![CI](https://github.com/manaswi-30/nexus-traffic/actions/workflows/ci.yml/badge.svg)
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
-![React](https://img.shields.io/badge/React-18-61dafb)
-![Coverage](https://img.shields.io/badge/Coverage-78%25-brightgreen)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+\# Nexus-Traffic-
 
-# NEXUS — Neural EXchange for Urban Signals
+Hybrid AI Traffic Management System using Reinforcement Learning, FastAPI and React.
 
-A production-grade, full-stack AI traffic management system featuring multi-agent reinforcement learning, real-time computer vision, JWT authentication, role-based access control, and a live React dashboard.
+\# 🚦 NEXUS - Hybrid AI Traffic Orchestration System
 
-> Built to solve a real problem: India loses ₹1.4 lakh crore annually to traffic congestion. NEXUS replaces fixed-time signals with intelligent, self-learning AI agents at a 99.9% cost reduction vs incumbent systems like SCATS.
 
----
 
-## Live Demo
+> \*\*An intelligent traffic management platform that combines Reinforcement Learning with rule-based decision making to optimize traffic flow across multiple connected intersections.\*\*
 
-- **Dashboard:** http://localhost:5173
-- **API Docs:** http://localhost:8000/docs
-- **WebSocket:** ws://localhost:8000/ws
 
----
 
-## Key Features
+!\[Python](https://img.shields.io/badge/Python-3.11-blue)
 
-| Feature | Technology | Detail |
-|---|---|---|
-| Multi-agent RL | DQN (stable-baselines3) | 16 independent agents, 200K training steps, 55% wait time reduction |
-| Computer Vision | YOLOv8 Nano | Real-time vehicle, pedestrian, bus and emergency vehicle detection |
-| Authentication | JWT + bcrypt | Secure login with hashed passwords and token-based sessions |
-| Role-Based Access | RBAC | Admin, Operator, Viewer — scoped permissions per role |
-| Emergency Pre-emption | Custom corridor logic | Full signal corridor cleared in under 1 second |
-| Weather Adaptation | Multiplier system | Rain ×1.3, Fog ×1.5, Storm ×1.8 green phase extension |
-| Bus Priority | Phase override | Immediate signal switch on bus detection |
-| Emissions Tracking | CO₂ calculation | Live savings vs fixed-time baseline |
-| Incident Detection | Threshold monitoring | Flags congestion spikes and stalled vehicles automatically |
-| Live Dashboard | React + WebSocket | Real-time updates every second across all 16 intersections |
-| Cloud Database | PostgreSQL (Railway) | Persistent storage for logs, users, emissions and events |
-| CI Pipeline | GitHub Actions | Auto-runs 30 tests on every push, enforces 70% coverage |
-| LLM Chatbot | Claude API | Officer Ray — AI traffic assistant with 5 knowledge domains |
+!\[FastAPI](https://img.shields.io/badge/FastAPI-Backend-green)
 
----
+!\[React](https://img.shields.io/badge/React-Frontend-61DAFB)
 
-## Architecture
-┌─────────────────────────────────────────────────────────────┐
-│                        PERCEPTION                           │
-│              YOLOv8 Camera → Vehicle Detection              │
-└──────────────────────────┬──────────────────────────────────┘
-│
-┌──────────────────────────▼──────────────────────────────────┐
-│                       INTELLIGENCE                          │
-│         16 × DQN RL Agents (4×4 intersection grid)         │
-│     Weather · Emergency · Bus Priority · Incident Logic     │
-└──────────────────────────┬──────────────────────────────────┘
-│
-┌──────────────────────────▼──────────────────────────────────┐
-│                        ACTUATION                            │
-│       FastAPI Backend + WebSocket → React Dashboard         │
-│         JWT Auth · RBAC · PostgreSQL · REST API             │
-└─────────────────────────────────────────────────────────────┘
----
+!\[SQLite](https://img.shields.io/badge/SQLite-Database-blue)
 
-## Tech Stack
+!\[Stable%20Baselines3](https://img.shields.io/badge/RL-DQN-orange)
 
-**Backend:** Python, FastAPI, SQLAlchemy, PostgreSQL, JWT, bcrypt, WebSockets
 
-**AI/ML:** stable-baselines3 (DQN), YOLOv8, NumPy, OpenCV
 
-**Frontend:** React 18, Vite, WebSocket API
+\---
 
-**Infrastructure:** Docker, Railway, GitHub Actions CI/CD
 
-**LLM:** Anthropic Claude API (Officer Ray chatbot)
 
----
+\# 📖 Overview
 
-## Quick Start
 
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL (local or Railway cloud)
 
-### 1. Clone and setup
-```bash
-git clone https://github.com/manaswi-30/nexus-traffic.git
-cd nexus-traffic
-cp .env.example .env
-# Fill in your values in .env
+NEXUS is a hybrid AI-powered traffic management system designed to demonstrate how intelligent traffic signal control can improve urban mobility.
+
+
+
+Traditional traffic lights operate on fixed timing schedules and cannot effectively adapt to changing traffic conditions. NEXUS addresses this by combining a trained \*\*Deep Q-Network (DQN)\*\* with deterministic traffic control rules to dynamically manage signal phases across a network of connected intersections.
+
+
+
+Rather than relying solely on artificial intelligence, NEXUS follows a \*\*hybrid architecture\*\*, where Reinforcement Learning optimizes normal traffic flow while rule-based logic handles critical scenarios such as emergency vehicles, pedestrian demand, and public transport priority.
+
+
+
+\---
+
+
+
+\# ✨ Features
+
+
+
+\- 🚦 Reinforcement Learning based adaptive traffic signal control
+
+\- 🧠 Hybrid AI + Rule-based decision architecture
+
+\- 🚑 Emergency corridor pre-emption
+
+\- 🚌 Public transport (bus) priority
+
+\- 🚶 Pedestrian-aware signal management
+
+\- 🌦 Weather-adaptive traffic simulation
+
+\- 🚧 Incident detection
+
+\- 📊 Real-time traffic dashboard
+
+\- 🤖 Officer Ray AI traffic assistant
+
+\- 🔐 Role-based authentication
+
+\- 🌱 Environmental analytics (CO₂ \& fuel savings)
+
+\- 📡 REST APIs with FastAPI
+
+\- ⚡ Real-time updates using WebSockets
+
+
+
+\---
+
+
+
+\# 🏗 System Architecture
+
+
+
 ```
 
-### 2. Install backend dependencies
-```bash
-pip install -r backend/requirements.txt
+&#x20;               Traffic Simulation
+
+&#x20;                       │
+
+&#x20;                       ▼
+
+&#x20;       ┌──────────────────────────────────┐
+
+&#x20;       │      Hybrid Decision Engine       │
+
+&#x20;       └──────────────────────────────────┘
+
+&#x20;               │                    │
+
+&#x20;               ▼                    ▼
+
+&#x20;     Rule-Based Controller      DQN Model
+
+&#x20;               │                    │
+
+&#x20;               └──────────┬─────────┘
+
+&#x20;                          ▼
+
+&#x20;                Traffic Signal Decision
+
+&#x20;                          │
+
+&#x20;                          ▼
+
+&#x20;                 FastAPI Backend
+
+&#x20;                          │
+
+&#x20;       ┌──────────────────┴──────────────────┐
+
+&#x20;       ▼                                     ▼
+
+&#x20;React Dashboard                     Officer Ray AI
+
 ```
 
-### 3. Initialize database
-```bash
-python -m backend.core.init_db
+
+
+\---
+
+
+
+\# 🧠 Reinforcement Learning
+
+
+
+The adaptive traffic controller is built using a \*\*Deep Q-Network (DQN)\*\* trained with Stable-Baselines3.
+
+
+
+The agent learns optimal traffic signal decisions by observing:
+
+
+
+\- Lane queue lengths
+
+\- Traffic density
+
+\- Current traffic phase
+
+\- Phase duration
+
+\- Neighbouring intersection state
+
+
+
+The objective is to reduce congestion by minimizing queue lengths and waiting time while maintaining efficient traffic flow.
+
+
+
+\---
+
+
+
+\# ⚙ Hybrid Decision Architecture
+
+
+
+NEXUS combines machine learning with deterministic traffic engineering rules.
+
+
+
+\### Normal Traffic
+
+
+
+The DQN predicts the most suitable traffic signal phase based on the current traffic state.
+
+
+
+\### Priority Scenarios
+
+
+
+Special situations are handled explicitly through rule-based logic:
+
+
+
+\- Emergency vehicle pre-emption
+
+\- Bus priority
+
+\- Pedestrian crossing requests
+
+\- Minimum green time enforcement
+
+\- Weather-aware traffic behaviour
+
+
+
+This hybrid approach improves both safety and explainability.
+
+
+
+\---
+
+
+
+\# 💻 Technology Stack
+
+
+
+\## Backend
+
+
+
+\- FastAPI
+
+\- Python
+
+\- SQLite
+
+\- Stable-Baselines3
+
+\- NumPy
+
+\- WebSockets
+
+
+
+\## Frontend
+
+
+
+\- React
+
+\- Vite
+
+
+
+\## AI
+
+
+
+\- Deep Q-Network (DQN)
+
+\- Reinforcement Learning
+
+\- Groq LLM Integration (Officer Ray)
+
+
+
+\---
+
+
+
+\# 📡 REST APIs
+
+
+
+FastAPI automatically generates interactive API documentation.
+
+
+
+Major API modules include:
+
+
+
+\- Authentication
+
+\- Traffic Monitoring
+
+\- Weather Updates
+
+\- Emergency Management
+
+\- Emissions Analytics
+
+\- Metrics
+
+\- AI Chat
+
+\- Sensor Updates
+
+
+
+Swagger UI:
+
+
+
 ```
 
-### 4. Start backend
-```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+http://localhost:8000/docs
+
 ```
 
-### 5. Start dashboard
+
+
+\---
+
+
+
+\# 🚀 Running the Project
+
+
+
+\## Backend
+
+
+
 ```bash
+
+cd backend
+
+pip install -r requirements.txt
+
+uvicorn main:app --reload
+
+```
+
+
+
+\## Frontend
+
+
+
+```bash
+
 cd frontend
+
 npm install
+
 npm run dev
+
 ```
 
-### 6. Open browser
-Dashboard → http://localhost:5173
-API Docs  → http://localhost:8000/docs
----
 
-## API Endpoints
 
-### Authentication
-| Method | Endpoint | Access | Description |
-|---|---|---|---|
-| POST | `/api/v1/auth/register` | Public | Register new user |
-| POST | `/api/v1/auth/login` | Public | Login, returns JWT token |
-| GET | `/api/v1/auth/me` | Authenticated | Get current user info |
+Alternatively,
 
-### Traffic (Protected)
-| Method | Endpoint | Access | Description |
-|---|---|---|---|
-| GET | `/api/v1/traffic/status` | Any role | Live traffic status |
-| POST | `/api/v1/traffic/emergency` | Operator+ | Trigger emergency corridor |
-| GET | `/api/v1/traffic/logs` | Admin only | Intersection history |
-| GET | `/api/v1/traffic/emissions` | Admin only | CO₂ savings data |
-| GET | `/api/v1/traffic/emergency/history` | Admin only | Past emergency events |
 
-### Simulation
-| Method | Endpoint | Access | Description |
-|---|---|---|---|
-| GET | `/intersections` | Public | All 16 intersection states |
-| GET | `/weather` | Public | Current weather condition |
-| GET | `/metrics` | Public | System-wide KPIs |
-| GET | `/emissions` | Public | Emissions summary |
-| GET | `/incidents` | Public | Active incidents |
-| POST | `/sensor_update` | Public | Feed real camera data |
-| WS | `/ws` | Public | Live WebSocket stream |
 
----
-
-## Running Tests
-
-```bash
-# Run all tests with coverage
-pytest backend/tests/ -v --cov=backend --cov-report=term-missing
-
-# Current results
-# 30 tests | 78% coverage | All passing
 ```
 
----
+start\_nexus.bat
 
-## User Roles
+```
 
-| Role | Dashboard Access | Emergency | Logs & Emissions |
-|---|---|---|---|
-| Admin | Full | ✅ | ✅ |
-| Operator | Full | ✅ | ❌ |
-| Viewer | Read only | ❌ | ❌ |
 
----
 
-## Cost Analysis
+starts both frontend and backend.
 
-| Scale | Monthly Cost | vs SCATS |
-|---|---|---|
-| 10 junctions | $0.00 (Free Tier) | ₹40L/junction saved |
-| 100 junctions | $0.08 | 99.9% cheaper |
-| 1,000 junctions | $185 | 99.9% cheaper |
-| 10,000 junctions | $1,720 | 99.9% cheaper |
 
----
 
-## Project Structure
-nexus-traffic/
-├── backend/
-│   ├── api/
-│   │   ├── auth.py           ← JWT auth endpoints
-│   │   └── traffic.py        ← Protected traffic endpoints
-│   ├── core/
-│   │   ├── auth.py           ← Password hashing, token logic
-│   │   ├── config.py         ← Environment settings
-│   │   ├── database.py       ← SQLAlchemy setup
-│   │   ├── dependencies.py   ← RBAC guards
-│   │   └── init_db.py        ← Table creation
-│   ├── models/
-│   │   ├── traffic.py        ← DB models for logs
-│   │   └── user.py           ← User model
-│   ├── tests/
-│   │   ├── conftest.py       ← Test fixtures
-│   │   ├── test_auth.py      ← 13 auth tests
-│   │   └── test_traffic.py   ← 17 traffic tests
-│   └── main.py               ← FastAPI app + simulation loop
-├── frontend/
-│   └── src/
-│       ├── App.jsx            ← Live dashboard
-│       └── components/
-│           └── OfficerRay.jsx ← AI chatbot mascot
-├── simulation/
-│   ├── train_agent.py         ← DQN training script
-│   └── emergency_detector.py  ← YOLOv8 detection
-├── .github/
-│   └── workflows/
-│       └── ci.yml             ← GitHub Actions CI
-├── .env.example
-├── docker-compose.yml
-└── README.md
----
+\---
 
-## RL Training Results
-Algorithm:     DQN (Deep Q-Network)
-Training:      200,000 timesteps
-Environment:   4×4 grid (16 intersections)
-Initial Reward: -70,500
-Final Reward:   -31,900
-Improvement:   55% reduction in average wait time
-Baseline:      Fixed-time signal system
----
 
-## License
 
-MIT License — free to use, modify and distribute.
+\# 📸 Screenshots
 
----
 
-## Author
 
-**Manaswi** — github.com/manaswi-30
+> \*(Screenshots will be added soon.)\*
+
+
+
+\- Login
+
+\- Dashboard
+
+\- Officer Ray
+
+\- Swagger API
+
+\- Emergency Corridor
+
+
+
+\---
+
+
+
+\# 🎥 Demo
+
+
+
+A demonstration video of the project will be added here.
+
+
+
+\---
+
+
+
+\# 📂 Project Structure
+
+
+
+```
+
+backend/
+
+frontend/
+
+models/
+
+scripts/
+
+.github/
+
+```
+
+
+
+\---
+
+
+
+\# 🌍 Future Improvements
+
+
+
+\- Integration with live traffic cameras
+
+\- YOLO-based vehicle detection
+
+\- SUMO traffic simulator integration
+
+\- Multi-agent Reinforcement Learning
+
+\- Cloud deployment
+
+\- Predictive congestion forecasting
+
+
+
+\---
+
+
+
+\# 👩‍💻 Author
+
+
+
+\*\*Manaswi Patibandla\*\*
+
+
+
+\---
+
+
+
+\# 📄 License
+
+
+
+This project is intended for educational and portfolio purposes.
+

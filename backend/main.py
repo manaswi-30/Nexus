@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import numpy as np
 from backend.api.auth import router as auth_router
 from backend.api.traffic import router as traffic_router
+from groq import Groq
 
 app = FastAPI(title="NEXUS Traffic API ", version="2.0.0")
 app.include_router(auth_router)
@@ -95,31 +96,44 @@ _model = None
 
 def get_model():
     global _model
+
     if _model is None:
         try:
             from stable_baselines3 import DQN
-            model_path = os.path.join(os.path.dirname(__file__), "../models/nexus_agent")
-            _model = DQN.load(model_path)
-            print("✅ RL model loaded")
-        except Exception as e:
-            print(f"⚠️  Using rule-based fallback: {e}")
-            _model = "fallback"
-    return _model
 
+            model_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "models","nexus_agent_fixed.zip"
+            )
+
+            print(f"🔍 Loading RL model from: {model_path}")
+
+            _model = DQN.load(model_path)
+
+            print("✅ Trained DQN model loaded successfully")
+
+        except Exception as e:
+            print(f"⚠️ Using rule-based fallback: {type(e).__name__}: {e}")
+            _model = "fallback"
+
+    return _model
 def rl_action(queues, densities, phase, phase_duration,
               pedestrians=0, bus_waiting=False, weather_multiplier=1.0):
     model = get_model()
     min_green = int(10 * weather_multiplier)
 
+    # Priority 1: Bus waiting
     if bus_waiting:
         ns = queues[0] + queues[1] if len(queues) > 1 else 0
         ew = queues[2] + queues[3] if len(queues) > 3 else 0
         return 0 if ns >= ew else 1
 
+    # Priority 2: Pedestrians
     if pedestrians > 5 and phase_duration > 20:
         phase_idx = list(PHASE_NAMES.values()).index(phase) if phase in PHASE_NAMES.values() else 0
         return (phase_idx + 1) % 4
 
+    # Rule-based fallback
     if model == "fallback":
         ns = queues[0] + queues[1] if len(queues) > 1 else 0
         ew = queues[2] + queues[3] if len(queues) > 3 else 0
@@ -129,16 +143,55 @@ def rl_action(queues, densities, phase, phase_duration,
 
     try:
         phase_idx = list(PHASE_NAMES.values()).index(phase) if phase in PHASE_NAMES.values() else 0
-        obs = np.array([
-            *queues[:4], *densities[:4],
-            phase_idx / 3.0, min(phase_duration / 60.0, 1.0),
-            min(pedestrians / 10.0, 1.0), 1.0 if bus_waiting else 0.0,
-            weather_multiplier / 2.0, *([0.0] * 7)
-        ], dtype=np.float32)[:20]
+
+        # ── Own state (10 dims) — matches TrafficIntersectionEnv._get_obs() ──
+        own_obs = np.array([
+            queues[0] if len(queues) > 0 else 0.0,   # lane 0 queue
+            queues[1] if len(queues) > 1 else 0.0,   # lane 1 queue
+            queues[2] if len(queues) > 2 else 0.0,   # lane 2 queue
+            queues[3] if len(queues) > 3 else 0.0,   # lane 3 queue
+            densities[0] if len(densities) > 0 else 0.0,  # lane 0 density
+            densities[1] if len(densities) > 1 else 0.0,  # lane 1 density
+            densities[2] if len(densities) > 2 else 0.0,  # lane 2 density
+            densities[3] if len(densities) > 3 else 0.0,  # lane 3 density
+            phase_idx / 3.0,                          # current phase normalised
+            min(phase_duration / 60.0, 1.0),          # phase duration normalised
+        ], dtype=np.float32)
+
+        # ── Neighbor average (10 dims) — average of all other intersections ──
+        neighbor_states = []
+        for iid, state in INTERSECTIONS.items():
+            if state.phase != phase:  # rough proxy for "different intersection"
+                neighbor_obs = np.array([
+                    state.queue_ns,
+                    state.queue_ns * 0.9,
+                    state.queue_ew,
+                    state.queue_ew * 0.9,
+                    state.density_ns,
+                    state.density_ns * 0.85,
+                    state.density_ew,
+                    state.density_ew * 0.85,
+                    list(PHASE_NAMES.values()).index(state.phase) / 3.0 if state.phase in PHASE_NAMES.values() else 0.0,
+                    min(state.phase_duration / 60.0, 1.0),
+                ], dtype=np.float32)
+                neighbor_states.append(neighbor_obs)
+
+        if neighbor_states:
+            neighbor_avg = np.mean(neighbor_states, axis=0)
+        else:
+            neighbor_avg = own_obs.copy()
+
+        # ── Full 20-dim observation matching MultiIntersectionEnv ──
+        obs = np.concatenate([own_obs, neighbor_avg]).astype(np.float32)
+
         action, _ = model.predict(obs, deterministic=True)
         return int(action)
-    except:
-        return 0
+
+    except Exception as e:
+        print(f"⚠️ RL prediction failed: {e}")
+        ns = queues[0] + queues[1] if len(queues) > 1 else 0
+        ew = queues[2] + queues[3] if len(queues) > 3 else 0
+        return 0 if ns >= ew else 1
 
 def detect_incident(state: IntersectionState):
     if state.queue_ns > 0.85 or state.queue_ew > 0.85:
@@ -182,27 +235,58 @@ async def simulation_loop():
             phase_timers[iid] += 1
 
             if phase_timers[iid] >= 5:
-                queues    = [state.queue_ns, state.queue_ns*0.9, state.queue_ew, state.queue_ew*0.9]
-                densities = [state.density_ns, state.density_ns*0.85, state.density_ew, state.density_ew*0.85]
-                action    = rl_action(queues, densities, state.phase, phase_timers[iid],
-                                      state.pedestrian_count, state.bus_waiting, w_mult)
-                new_phase = PHASE_NAMES[action]
-                if new_phase != state.phase:
-                    phase_timers[iid] = 0
-                INTERSECTIONS[iid].phase          = new_phase
-                INTERSECTIONS[iid].phase_duration = phase_timers[iid]
-                COST_STATE["total_decisions"]    += 1
-                COST_STATE["total_cost_usd"]     += COST_STATE["cost_per_inference_usd"]
+
+                # Emergency corridor has priority.
+                # Do not allow bus, pedestrian, or DQN logic to overwrite
+                # the pre-emptive emergency phase.
+                if state.emergency:
+                    INTERSECTIONS[iid].phase_duration = phase_timers[iid]
+
+                else:
+                    queues = [
+                        state.queue_ns,
+                        state.queue_ns * 0.9,
+                        state.queue_ew,
+                        state.queue_ew * 0.9
+                    ]
+
+                    densities = [
+                        state.density_ns,
+                        state.density_ns * 0.85,
+                        state.density_ew,
+                        state.density_ew * 0.85
+                    ]
+
+                    action = rl_action(
+                        queues,
+                        densities,
+                        state.phase,
+                        phase_timers[iid],
+                        state.pedestrian_count,
+                        state.bus_waiting,
+                        w_mult
+                    )
+
+                    new_phase = PHASE_NAMES[action]
+
+                    if new_phase != state.phase:
+                        phase_timers[iid] = 0
+
+                    INTERSECTIONS[iid].phase = new_phase
+                    INTERSECTIONS[iid].phase_duration = phase_timers[iid]
+
+                    COST_STATE["total_decisions"] += 1
+                    COST_STATE["total_cost_usd"] += COST_STATE["cost_per_inference_usd"]
 
             phase   = INTERSECTIONS[iid].phase
             prev_ns = state.queue_ns
             prev_ew = state.queue_ew
 
             if "NS" in phase:
-                INTERSECTIONS[iid].queue_ns = max(0, state.queue_ns - 0.08*speed_factor + arrival)
+                INTERSECTIONS[iid].queue_ns = max(0, state.queue_ns - 0.14*speed_factor + arrival)
                 INTERSECTIONS[iid].queue_ew = min(1, state.queue_ew + arrival * 0.7)
             else:
-                INTERSECTIONS[iid].queue_ew = max(0, state.queue_ew - 0.08*speed_factor + arrival)
+                INTERSECTIONS[iid].queue_ew = max(0, state.queue_ew - 0.14*speed_factor + arrival)
                 INTERSECTIONS[iid].queue_ns = min(1, state.queue_ns + arrival * 0.7)
 
             INTERSECTIONS[iid].density_ns = min(1, state.queue_ns * 1.2)
@@ -250,18 +334,52 @@ async def simulation_loop():
         await asyncio.sleep(1)
 
 def _trigger_emergency():
-    vehicle = random.choice(["Ambulance 🚑", "Fire Truck 🚒", "Police Car 🚔"])
-    start   = random.choice(list(INTERSECTIONS.keys())[:8])
+    vehicle = random.choice([
+        "Ambulance 🚑",
+        "Fire Truck 🚒",
+        "Police Car 🚔"
+    ])
+
+    start = random.choice(list(INTERSECTIONS.keys())[:8])
     row, col = int(start[1]), int(start[2])
-    corridor = ([f"I{row}{c}" for c in range(col, min(col+4, GRID_SIZE))]
-                if random.random() > 0.5 else
-                [f"I{r}{col}" for r in range(row, min(row+4, GRID_SIZE))])
-    EMERGENCY_STATE.update({"active": True, "corridor": corridor,
-                             "vehicle_type": vehicle, "detected_at": time.time()})
+
+    # Randomly choose corridor orientation
+    horizontal = random.random() > 0.5
+
+    if horizontal:
+        corridor = [
+            f"I{row}{c}"
+            for c in range(col, min(col + 4, GRID_SIZE))
+        ]
+        priority_phase = "EW_GREEN"
+        direction = "horizontal"
+    else:
+        corridor = [
+            f"I{r}{col}"
+            for r in range(row, min(row + 4, GRID_SIZE))
+        ]
+        priority_phase = "NS_GREEN"
+        direction = "vertical"
+
+    EMERGENCY_STATE.update({
+        "active": True,
+        "corridor": corridor,
+        "vehicle_type": vehicle,
+        "detected_at": time.time(),
+        "direction": direction
+    })
+
     for iid in corridor:
         if iid in INTERSECTIONS:
             INTERSECTIONS[iid].emergency = True
-            INTERSECTIONS[iid].phase     = "NS_GREEN"
+            INTERSECTIONS[iid].phase = priority_phase
+
+    print(
+        f"🚨 Emergency triggered: {vehicle} | "
+        f"{direction} corridor | "
+        f"Phase: {priority_phase} | "
+        f"Route: {corridor}"
+    )
 
 def _clear_emergency():
     for iid in EMERGENCY_STATE["corridor"]:
@@ -326,9 +444,9 @@ def sensor_update(data: SensorUpdate):
     if iid not in INTERSECTIONS:
         raise HTTPException(404, f"Intersection {iid} not found")
     w_mult = WEATHER["timing_multiplier"]
-    action = rl_action(data.lane_densities, data.lane_queues,
-                       INTERSECTIONS[iid].phase, INTERSECTIONS[iid].phase_duration,
-                       data.pedestrian_count, data.bus_detected, w_mult)
+    action = rl_action(data.lane_queues, data.lane_densities,
+                   INTERSECTIONS[iid].phase, INTERSECTIONS[iid].phase_duration,
+                   data.pedestrian_count, data.bus_detected, w_mult)
     if data.weather and data.weather in WEATHER_CONDITIONS:
         WEATHER.update({"condition": data.weather,
                         **WEATHER_CONDITIONS[data.weather]})
@@ -343,7 +461,7 @@ def sensor_update(data: SensorUpdate):
 def get_metrics():
     states = list(INTERSECTIONS.values())
     return {
-        "avg_queue_length":          round(float(np.mean([s.queue_ns + s.queue_ew for s in states])), 3),
+        "avg_queue_length":          round(float(np.mean([(s.queue_ns + s.queue_ew) / 2.0 for s in states])), 3),
         "avg_wait_time_seconds":     round(float(np.mean([s.wait_time for s in states])), 1),
         "active_intersections":      len(states),
         "emergency_active":          EMERGENCY_STATE["active"],
@@ -389,7 +507,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "emissions":     EMISSIONS,
                 "incidents":     [i for i in INCIDENTS if not i["resolved"]][-5:],
                 "metrics": {
-                    "avg_queue":         round(float(np.mean([s.queue_ns + s.queue_ew for s in states])), 3),
+                    "avg_queue":         round(float(np.mean([(s.queue_ns + s.queue_ew) / 2.0 for s in states])), 3),
                     "total_decisions":   COST_STATE["total_decisions"],
                     "total_cost_usd":    round(COST_STATE["total_cost_usd"], 6),
                     "buses_waiting":     sum(1 for s in states if s.bus_waiting),
@@ -401,9 +519,89 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         active_connections.remove(websocket)
 
+@app.post("/dataset_update")
+def dataset_update(data: SensorUpdate):
+    """
+    Accepts real traffic dataset records and feeds them
+    into the RL agent — same as sensor_update but tagged
+    as dataset source for dashboard indicator
+    """
+    iid = data.intersection_id
+    if iid not in INTERSECTIONS:
+        raise HTTPException(404, f"Intersection {iid} not found")
+    
+    w_mult = WEATHER["timing_multiplier"]
+    if data.weather and data.weather in WEATHER_CONDITIONS:
+        WEATHER.update({
+            "condition": data.weather,
+            **WEATHER_CONDITIONS[data.weather]
+        })
+    
+    action = rl_action(
+        data.lane_densities, data.lane_queues,
+        INTERSECTIONS[iid].phase, INTERSECTIONS[iid].phase_duration,
+        data.pedestrian_count, data.bus_detected, w_mult
+    )
+    
+    INTERSECTIONS[iid].phase = PHASE_NAMES[action]
+    INTERSECTIONS[iid].pedestrian_count = data.pedestrian_count
+    INTERSECTIONS[iid].bus_waiting = data.bus_detected
+    COST_STATE["total_decisions"] += 1
+    COST_STATE["total_cost_usd"] += COST_STATE["cost_per_inference_usd"]
+    
+    return {
+        "action": action,
+        "phase": PHASE_NAMES[action],
+        "source": "real_dataset",
+        "intersection": iid,
+        "weather": WEATHER["condition"],
+    }
+import httpx
 
+class ChatMessage(BaseModel):
+    message: str
+    tab: str = "nexus"
+    history: list = []
 
+@app.post("/chat")
+async def chat(data: ChatMessage):
+    api_key = os.getenv("GROQ_API_KEY", "")
+    if not api_key:
+        raise HTTPException(500, "Groq API key not configured")
 
+    system_prompts = {
+        "nexus": """You are Officer Ray, a cheerful traffic police officer mascot for NEXUS — Neural EXchange for Urban Signals. NEXUS is an AI traffic management system using DQN reinforcement learning across 16 intersections in a 4x4 grid. Key facts: 55% wait time reduction, 200K training steps, emergency pre-emption under 1 second, weather adaptation, bus priority, emissions tracking, YOLOv8 computer vision. Cost: $0 setup vs Rs40L/junction for SCATS. Use police metaphors like 'Green light on that!' Keep answers to 2-4 sentences.""",
+        "rules": """You are Officer Ray, a friendly Indian traffic police officer. Help citizens understand Indian traffic rules under Motor Vehicles Act 1988 amended 2019. Speed limits: 50kmph residential, 60-70 urban, 80-100 highways. Helmets mandatory for all. Seatbelts mandatory for all occupants. Keep answers clear and practical.""",
+        "fines": """You are Officer Ray, an Indian traffic police officer explaining fines under MV Amendment Act 2019. Red light: Rs1000-5000. Drunk driving: Rs10000 plus jail. No helmet: Rs1000 plus suspension. No seatbelt: Rs1000. Mobile while driving: Rs1000-5000. Mention Parivahan portal for e-challans.""",
+        "license": """You are Officer Ray helping with Indian driving licence and documentation. Learner licence at sarathi.parivahan.gov.in, fee Rs150-200, valid 6 months. DL valid 20 years. RC renewal every 15 years. PUC every 6 months petrol, 3 months diesel. DigiLocker stores digital DL legally.""",
+        "general": """You are Officer Ray, a friendly Indian traffic police officer for general road safety. Know traffic signals, accident procedure call 100 or 112, road rage tips, highway breakdown call NHAI 1033, Good Samaritan law. Be warm and practical.""",
+    }
+
+    system = system_prompts.get(data.tab, system_prompts["nexus"])
+
+    messages = []
+    for msg in data.history[-10:]:
+        messages.append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+    messages.append({"role": "user", "content": data.message})
+
+    try:
+        client = Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": system},
+                *messages
+            ],
+            max_tokens=300,
+            temperature=0.7,
+        )
+        reply = response.choices[0].message.content.strip()
+        return {"reply": reply}
+    except Exception as e:
+        raise HTTPException(500, f"Groq error: {str(e)}")
 
 
 

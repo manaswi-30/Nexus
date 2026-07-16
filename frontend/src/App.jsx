@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import OfficerRay from "./components/OfficerRay";
+
 const API_BASE = "http://localhost:8000";
 const WS_URL   = "ws://localhost:8000/ws";
 
@@ -12,6 +13,174 @@ const PHASE_LABELS = {
   NS_LEFT:  "N↙",  EW_LEFT:  "E↙",
 };
 
+// ── AUTH HELPERS ──────────────────────────────────────────────────────────────
+function getToken() { return localStorage.getItem("nexus_token"); }
+function getUser()  { return JSON.parse(localStorage.getItem("nexus_user") || "null"); }
+function saveAuth(token, user) {
+  localStorage.setItem("nexus_token", token);
+  localStorage.setItem("nexus_user", JSON.stringify(user));
+}
+function clearAuth() {
+  localStorage.removeItem("nexus_token");
+  localStorage.removeItem("nexus_user");
+}
+
+// ── LOGIN PAGE ────────────────────────────────────────────────────────────────
+function AuthPage({ onLogin }) {
+  const [mode, setMode]       = useState("login"); // "login" or "register"
+  const [form, setForm]       = useState({ full_name: "", email: "", password: "", role: "viewer" });
+  const [error, setError]     = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      if (mode === "register") {
+        const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        const data = await res.json();
+        if (!res.ok) { setError(data.detail || "Registration failed"); setLoading(false); return; }
+        setMode("login");
+        setError("✅ Registered! Please log in.");
+        setLoading(false);
+        return;
+      }
+      const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, password: form.password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.detail || "Login failed"); setLoading(false); return; }
+      saveAuth(data.access_token, { name: data.name, role: data.role, email: form.email });
+      onLogin();
+    } catch {
+      setError("Cannot connect to server. Is the backend running?");
+    }
+    setLoading(false);
+  };
+
+  const inp = (placeholder, field, type = "text") => (
+    <input
+      type={type}
+      placeholder={placeholder}
+      value={form[field]}
+      onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+      onKeyDown={e => e.key === "Enter" && handleSubmit()}
+      style={{
+        width: "100%", padding: "11px 14px", borderRadius: 8,
+        border: "1px solid #334155", background: "#1e293b",
+        color: "#f1f5f9", fontSize: 14, outline: "none",
+        marginBottom: 10,
+      }}
+    />
+  );
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: "#020817",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "'Segoe UI', system-ui, sans-serif",
+    }}>
+      <div style={{
+        width: 380, background: "#0f172a", borderRadius: 16,
+        border: "1px solid #1e293b", padding: 36,
+        boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+      }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ fontSize: 36, marginBottom: 6 }}>🚦</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: "#22c55e", letterSpacing: "-1px" }}>NEXUS</div>
+          <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>Neural Traffic Control System</div>
+        </div>
+
+        {/* Toggle */}
+        <div style={{ display: "flex", background: "#1e293b", borderRadius: 8, padding: 3, marginBottom: 24 }}>
+          {["login", "register"].map(m => (
+            <button key={m} onClick={() => { setMode(m); setError(""); }}
+              style={{
+                flex: 1, padding: "8px 0", borderRadius: 6, border: "none",
+                background: mode === m ? "#22c55e" : "transparent",
+                color: mode === m ? "#000" : "#64748b",
+                fontWeight: mode === m ? 700 : 400,
+                cursor: "pointer", fontSize: 13, transition: "all 0.2s",
+                textTransform: "capitalize",
+              }}>
+              {m}
+            </button>
+          ))}
+        </div>
+
+        {/* Form */}
+        {mode === "register" && inp("Full Name", "full_name")}
+        {inp("Email address", "email", "email")}
+        {inp("Password", "password", "password")}
+
+        {mode === "register" && (
+          <select
+            value={form.role}
+            onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+            style={{
+              width: "100%", padding: "11px 14px", borderRadius: 8,
+              border: "1px solid #334155", background: "#1e293b",
+              color: "#f1f5f9", fontSize: 14, outline: "none", marginBottom: 10,
+            }}>
+            <option value="viewer">Viewer — Read only access</option>
+            <option value="operator">Operator — Can trigger emergency</option>
+            <option value="admin">Admin — Full access</option>
+          </select>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div style={{
+            padding: "9px 12px", borderRadius: 7, marginBottom: 12, fontSize: 12,
+            background: error.startsWith("✅") ? "#052e16" : "#450a0a",
+            border: `1px solid ${error.startsWith("✅") ? "#166534" : "#7f1d1d"}`,
+            color: error.startsWith("✅") ? "#4ade80" : "#f87171",
+          }}>
+            {error}
+          </div>
+        )}
+
+        {/* Submit */}
+        <button onClick={handleSubmit} disabled={loading}
+          style={{
+            width: "100%", padding: "12px 0", borderRadius: 8, border: "none",
+            background: loading ? "#166534" : "#22c55e",
+            color: "#000", fontWeight: 700, fontSize: 14,
+            cursor: loading ? "not-allowed" : "pointer", transition: "all 0.2s",
+          }}>
+          {loading ? "Please wait..." : mode === "login" ? "Sign In →" : "Create Account →"}
+        </button>
+
+        {/* Role hint */}
+        <div style={{ marginTop: 20, padding: 12, background: "#1e293b", borderRadius: 8 }}>
+          <div style={{ color: "#475569", fontSize: 11, marginBottom: 6, fontWeight: 600 }}>
+            ROLE PERMISSIONS
+          </div>
+          {[
+            ["Admin",    "Full access + logs + emissions data",  "#22c55e"],
+            ["Operator", "Dashboard + emergency trigger",         "#f59e0b"],
+            ["Viewer",   "Live dashboard — read only",            "#38bdf8"],
+          ].map(([r, d, c]) => (
+            <div key={r} style={{ display: "flex", gap: 8, marginBottom: 4, alignItems: "center" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: c, flexShrink: 0 }}/>
+              <span style={{ color: c, fontSize: 11, fontWeight: 600, minWidth: 55 }}>{r}</span>
+              <span style={{ color: "#475569", fontSize: 10 }}>{d}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── WEBSOCKET HOOK ────────────────────────────────────────────────────────────
 function useWebSocket(url) {
   const [data, setData]     = useState(null);
   const [status, setStatus] = useState("connecting");
@@ -40,6 +209,7 @@ function useWebSocket(url) {
   return { data, status };
 }
 
+// ── KPI CARD ──────────────────────────────────────────────────────────────────
 function KPICard({ label, value, sub, color = "#f0c419", icon }) {
   return (
     <div style={{
@@ -91,9 +261,7 @@ function EmissionsPanel({ emissions }) {
   return (
     <div style={{ background: "#0f172a", border: "1px solid #16a34a33", borderRadius: 8, padding: "12px 14px" }}>
       <div style={{ color: "#4ade80", fontWeight: 600, fontSize: 11, textTransform: "uppercase",
-        letterSpacing: "0.08em", marginBottom: 10 }}>
-        Environmental Impact
-      </div>
+        letterSpacing: "0.08em", marginBottom: 10 }}>Environmental Impact</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
         {items.map(([l, v, c]) => (
           <div key={l} style={{ background: "#1e293b", borderRadius: 6, padding: "6px 10px" }}>
@@ -117,9 +285,7 @@ function IncidentsPanel({ incidents }) {
   return (
     <div style={{ background: "#0f172a", border: "1px solid #ef444433", borderRadius: 8, padding: "12px 14px" }}>
       <div style={{ color: "#f87171", fontWeight: 600, fontSize: 11, textTransform: "uppercase",
-        letterSpacing: "0.08em", marginBottom: 8 }}>
-        Active Incidents ({incidents.length})
-      </div>
+        letterSpacing: "0.08em", marginBottom: 8 }}>Active Incidents ({incidents.length})</div>
       {incidents.slice(0, 3).map((inc, i) => (
         <div key={i} style={{
           background: "#1e293b", borderRadius: 6, padding: "6px 10px", marginBottom: 6,
@@ -127,9 +293,7 @@ function IncidentsPanel({ incidents }) {
         }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span style={{ color: "#e2e8f0", fontSize: 11 }}>{inc.type}</span>
-            <span style={{ color: inc.severity === "HIGH" ? "#ef4444" : "#f59e0b", fontSize: 10 }}>
-              {inc.severity}
-            </span>
+            <span style={{ color: inc.severity === "HIGH" ? "#ef4444" : "#f59e0b", fontSize: 10 }}>{inc.severity}</span>
           </div>
           <div style={{ color: "#475569", fontSize: 10, marginTop: 2 }}>{inc.intersection_id}</div>
         </div>
@@ -142,33 +306,23 @@ function IntersectionNode({ state, isCorridorActive, gridX, gridY }) {
   const color    = PHASE_COLORS[state.phase] || "#22c55e";
   const queueLvl = (state.queue_ns + state.queue_ew) / 2;
   const isHigh   = queueLvl > 0.6;
-
   return (
-    <div style={{
-      position: "absolute", left: gridX - 34, top: gridY - 34,
+    <div style={{ position: "absolute", left: gridX - 34, top: gridY - 34,
       width: 68, height: 68, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
-    }}>
+      alignItems: "center", justifyContent: "center" }}>
       {state.emergency && (
-        <div style={{
-          position: "absolute", inset: -6, borderRadius: "50%",
-          border: "2px solid #ef4444", animation: "pulse 0.8s infinite", opacity: 0.9,
-        }} />
+        <div style={{ position: "absolute", inset: -6, borderRadius: "50%",
+          border: "2px solid #ef4444", animation: "pulse 0.8s infinite", opacity: 0.9 }} />
       )}
-      <div style={{
-        position: "absolute", inset: 0, borderRadius: 8,
-        background: isCorridorActive
-          ? "#ef444418"
+      <div style={{ position: "absolute", inset: 0, borderRadius: 8,
+        background: isCorridorActive ? "#ef444418"
           : `rgba(${Math.round(255*queueLvl)},${Math.round(255*(1-queueLvl))},0,0.1)`,
         border: `1.5px solid ${state.emergency ? "#ef4444" : state.incident_detected ? "#f59e0b" : color}`,
-        transition: "all 0.4s",
-      }} />
-      <div style={{
-        width: 24, height: 24, borderRadius: "50%", background: color,
+        transition: "all 0.4s" }} />
+      <div style={{ width: 24, height: 24, borderRadius: "50%", background: color,
         boxShadow: `0 0 8px ${color}66`, display: "flex", alignItems: "center",
         justifyContent: "center", fontSize: 8, fontWeight: 700, color: "#000",
-        zIndex: 1, transition: "background 0.3s",
-      }}>
+        zIndex: 1, transition: "background 0.3s" }}>
         {PHASE_LABELS[state.phase] || "●"}
       </div>
       <div style={{ display: "flex", gap: 2, zIndex: 1, marginTop: 3 }}>
@@ -177,14 +331,10 @@ function IntersectionNode({ state, isCorridorActive, gridX, gridY }) {
         {state.incident_detected && <span style={{ fontSize: 7 }}>⚠️</span>}
       </div>
       <div style={{ color: "#475569", fontSize: 8, zIndex: 1, marginTop: 1 }}>{state.id}</div>
-      <div style={{
-        position: "absolute", bottom: 4, left: 8, right: 8,
-        height: 2, background: "#1e293b", borderRadius: 2, overflow: "hidden",
-      }}>
-        <div style={{
-          height: "100%", width: `${queueLvl * 100}%`,
-          background: isHigh ? "#ef4444" : "#22c55e", transition: "width 0.5s",
-        }} />
+      <div style={{ position: "absolute", bottom: 4, left: 8, right: 8,
+        height: 2, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${queueLvl * 100}%`,
+          background: isHigh ? "#ef4444" : "#22c55e", transition: "width 0.5s" }} />
       </div>
     </div>
   );
@@ -195,11 +345,9 @@ function RoadGrid({ intersections, emergency }) {
   const SIZE = GRID * CELL + PAD * 2;
   const corridorSet = new Set(emergency?.corridor || []);
   return (
-    <div style={{
-      position: "relative", width: SIZE, height: SIZE,
+    <div style={{ position: "relative", width: SIZE, height: SIZE,
       background: "#060d1e", borderRadius: 10, overflow: "hidden",
-      border: "1px solid #1e293b", flexShrink: 0,
-    }}>
+      border: "1px solid #1e293b", flexShrink: 0 }}>
       <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
         {Array.from({ length: GRID }).map((_, i) => (
           <g key={i}>
@@ -221,17 +369,13 @@ function RoadGrid({ intersections, emergency }) {
         );
       })}
       {emergency?.active && (
-        <div style={{
-          position: "absolute", top: 10, left: 10, right: 10,
+        <div style={{ position: "absolute", top: 10, left: 10, right: 10,
           background: "#7f1d1d44", border: "1px solid #ef4444",
           borderRadius: 6, padding: "6px 12px",
-          display: "flex", alignItems: "center", gap: 8,
-        }}>
+          display: "flex", alignItems: "center", gap: 8 }}>
           <span>🚨</span>
           <div>
-            <div style={{ color: "#f87171", fontWeight: 600, fontSize: 12 }}>
-              Emergency Corridor Active
-            </div>
+            <div style={{ color: "#f87171", fontWeight: 600, fontSize: 12 }}>Emergency Corridor Active</div>
             <div style={{ color: "#fca5a5", fontSize: 10 }}>
               {emergency.vehicle_type} — {emergency.corridor?.join(" → ")}
             </div>
@@ -252,18 +396,12 @@ function CostTable() {
   return (
     <div style={{ background: "#0f172a", borderRadius: 8, padding: 14, border: "1px solid #1e293b" }}>
       <div style={{ color: "#94a3b8", fontWeight: 600, fontSize: 11, textTransform: "uppercase",
-        letterSpacing: "0.08em", marginBottom: 10 }}>
-        Cost at Scale — vs ₹40L/junction (SCATS)
-      </div>
+        letterSpacing: "0.08em", marginBottom: 10 }}>Cost at Scale — vs ₹40L/junction (SCATS)</div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
         <thead>
-          <tr>
-            {["Junctions", "Monthly", "Per Node/Day", "Notes"].map(h => (
-              <th key={h} style={{ color: "#475569", padding: "3px 6px", textAlign: "left", fontWeight: 500 }}>
-                {h}
-              </th>
-            ))}
-          </tr>
+          <tr>{["Junctions","Monthly","Per Node/Day","Notes"].map(h => (
+            <th key={h} style={{ color: "#475569", padding: "3px 6px", textAlign: "left", fontWeight: 500 }}>{h}</th>
+          ))}</tr>
         </thead>
         <tbody>
           {rows.map(([n, m, p, s]) => (
@@ -280,8 +418,12 @@ function CostTable() {
   );
 }
 
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const { data, status } = useWebSocket(WS_URL);
+  const [authed, setAuthed] = useState(!!getToken());
+  const user = getUser();
+
+  const { data, status } = useWebSocket(authed ? WS_URL : null);
   const [tab, setTab] = useState("grid");
 
   const intersections = data?.intersections || [];
@@ -292,8 +434,14 @@ export default function App() {
   const metrics       = data?.metrics       || {};
 
   const triggerEmergency = async () => {
+    if (user?.role === "viewer") return alert("You need Operator or Admin role to trigger emergency!");
     try { await fetch(`${API_BASE}/emergency/trigger`, { method: "POST" }); } catch {}
   };
+
+  const handleLogout = () => { clearAuth(); setAuthed(false); };
+
+  // Show login page if not authenticated
+  if (!authed) return <AuthPage onLogin={() => setAuthed(true)} />;
 
   const avgQueue  = ((metrics.avg_queue || 0) * 100).toFixed(1);
   const decisions = (metrics.total_decisions || 0).toLocaleString();
@@ -301,11 +449,11 @@ export default function App() {
   const co2       = (emissions.total_co2_saved_kg || 0).toFixed(3);
   const trees     = (emissions.equivalent_trees   || 0).toFixed(2);
 
+  const roleColor = { admin: "#22c55e", operator: "#f59e0b", viewer: "#38bdf8" }[user?.role] || "#94a3b8";
+
   return (
-    <div style={{
-      background: "#020817", minHeight: "100vh", color: "#e2e8f0",
-      fontFamily: "'Segoe UI', system-ui, sans-serif", padding: 16,
-    }}>
+    <div style={{ background: "#020817", minHeight: "100vh", color: "#e2e8f0",
+      fontFamily: "'Segoe UI', system-ui, sans-serif", padding: 16 }}>
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(1.25)} }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
@@ -313,11 +461,9 @@ export default function App() {
       `}</style>
 
       {/* Header */}
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
         marginBottom: 14, background: "#0f172a",
-        borderRadius: 10, padding: "14px 18px", border: "1px solid #1e293b",
-      }}>
+        borderRadius: 10, padding: "14px 18px", border: "1px solid #1e293b" }}>
         <div>
           <div style={{ color: "#475569", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>
             Intelligent Traffic Orchestration System
@@ -327,30 +473,51 @@ export default function App() {
           </h1>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={triggerEmergency} style={{
-            background: "#450a0a", color: "#f87171",
-            border: "1px solid #7f1d1d", borderRadius: 6,
-            padding: "6px 14px", cursor: "pointer", fontSize: 12,
-            animation: emergency.active ? "blink 1s infinite" : "none",
-          }}>
-            🚨 {emergency.active ? "Emergency Active" : "Simulate Emergency"}
-          </button>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 6,
+
+          {/* User badge */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8,
+            background: "#1e293b", borderRadius: 20, padding: "5px 12px",
+            border: `1px solid ${roleColor}44` }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", background: roleColor }}/>
+            <span style={{ fontSize: 12, color: "#e2e8f0" }}>{user?.name}</span>
+            <span style={{ fontSize: 10, color: roleColor, textTransform: "uppercase", fontWeight: 700 }}>
+              {user?.role}
+            </span>
+          </div>
+
+          {/* Emergency button — hidden for viewers */}
+          {user?.role !== "viewer" && (
+            <button onClick={triggerEmergency} style={{
+              background: "#450a0a", color: "#f87171",
+              border: "1px solid #7f1d1d", borderRadius: 6,
+              padding: "6px 14px", cursor: "pointer", fontSize: 12,
+              animation: emergency.active ? "blink 1s infinite" : "none",
+            }}>
+              🚨 {emergency.active ? "Emergency Active" : "Simulate Emergency"}
+            </button>
+          )}
+
+          {/* Status */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6,
             background: status === "connected" ? "#052e16" : "#450a0a",
             border: `1px solid ${status === "connected" ? "#166534" : "#7f1d1d"}`,
-            borderRadius: 20, padding: "4px 12px",
-          }}>
-            <div style={{
-              width: 6, height: 6, borderRadius: "50%",
+            borderRadius: 20, padding: "4px 12px" }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%",
               background: status === "connected" ? "#22c55e" : "#ef4444",
-              boxShadow: status === "connected" ? "0 0 5px #22c55e" : "none",
-            }} />
+              boxShadow: status === "connected" ? "0 0 5px #22c55e" : "none" }} />
             <span style={{ fontSize: 11, color: status === "connected" ? "#4ade80" : "#f87171" }}>
               {status === "connected" ? "Live" : status}
             </span>
-            <OfficerRay />
           </div>
+
+          {/* Logout */}
+          <button onClick={handleLogout} style={{
+            background: "transparent", color: "#475569",
+            border: "1px solid #1e293b", borderRadius: 6,
+            padding: "6px 12px", cursor: "pointer", fontSize: 12,
+          }}>
+            Sign Out
+          </button>
         </div>
       </div>
 
@@ -379,9 +546,7 @@ export default function App() {
             border: tab === id ? "1px solid #334155" : "1px solid transparent",
             borderRadius: 6, cursor: "pointer", fontSize: 12,
             fontWeight: tab === id ? 600 : 400,
-          }}>
-            {label}
-          </button>
+          }}>{label}</button>
         ))}
       </div>
 
@@ -419,9 +584,7 @@ export default function App() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={{ background: "#0f172a", borderRadius: 8, padding: 14, border: "1px solid #1e293b" }}>
             <div style={{ color: "#38bdf8", fontWeight: 600, fontSize: 11, textTransform: "uppercase",
-              letterSpacing: "0.08em", marginBottom: 12 }}>
-              Queue Levels per Intersection
-            </div>
+              letterSpacing: "0.08em", marginBottom: 12 }}>Queue Levels per Intersection</div>
             {intersections.slice(0, 8).map(s => (
               <div key={s.id} style={{ marginBottom: 9 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
@@ -437,60 +600,45 @@ export default function App() {
               </div>
             ))}
           </div>
-
           <div style={{ background: "#0f172a", borderRadius: 8, padding: 14, border: "1px solid #1e293b" }}>
             <div style={{ color: "#fb923c", fontWeight: 600, fontSize: 11, textTransform: "uppercase",
-              letterSpacing: "0.08em", marginBottom: 12 }}>
-              Weather → Signal Timing
-            </div>
+              letterSpacing: "0.08em", marginBottom: 12 }}>Weather → Signal Timing</div>
             {[
               ["Clear",  "×1.0", "Normal operation",   "#4ade80"],
               ["Rain",   "×1.3", "Extended green time", "#38bdf8"],
               ["Fog",    "×1.5", "Reduced speed zones", "#94a3b8"],
               ["Storm",  "×1.8", "Emergency protocols", "#f87171"],
             ].map(([w, m, d, c]) => (
-              <div key={w} style={{
-                display: "flex", alignItems: "center", gap: 10, marginBottom: 8,
+              <div key={w} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8,
                 padding: "6px 8px", borderRadius: 6,
                 background: weather.condition === w ? "#1e293b" : "transparent",
-                border: weather.condition === w ? `1px solid ${c}44` : "1px solid transparent",
-              }}>
+                border: weather.condition === w ? `1px solid ${c}44` : "1px solid transparent" }}>
                 <span style={{ color: "#64748b", fontSize: 12, minWidth: 44 }}>{w}</span>
                 <span style={{ color: c, fontWeight: 700, fontSize: 13, minWidth: 32 }}>{m}</span>
                 <span style={{ color: "#475569", fontSize: 11 }}>{d}</span>
-                {weather.condition === w && (
-                  <span style={{ marginLeft: "auto", color: c, fontSize: 10 }}>now</span>
-                )}
+                {weather.condition === w && <span style={{ marginLeft: "auto", color: c, fontSize: 10 }}>now</span>}
               </div>
             ))}
           </div>
-
           <div style={{ background: "#0f172a", borderRadius: 8, padding: 14, border: "1px solid #16a34a22" }}>
             <div style={{ color: "#4ade80", fontWeight: 600, fontSize: 11, textTransform: "uppercase",
-              letterSpacing: "0.08em", marginBottom: 12 }}>
-              Emissions vs Fixed-Time Baseline
-            </div>
+              letterSpacing: "0.08em", marginBottom: 12 }}>Emissions vs Fixed-Time Baseline</div>
             {[
               ["CO₂ Reduced",      `${(emissions.total_co2_saved_kg || 0).toFixed(4)} kg`, "#22c55e"],
               ["Equivalent Trees", `${(emissions.equivalent_trees   || 0).toFixed(3)}`,    "#4ade80"],
               ["Fuel Saved",       `${(emissions.fuel_saved_liters  || 0).toFixed(3)} L`,  "#f0c419"],
               ["Vehicles Served",  `${(emissions.total_vehicles_served || 0).toLocaleString()}`, "#38bdf8"],
             ].map(([l, v, c]) => (
-              <div key={l} style={{
-                display: "flex", justifyContent: "space-between",
-                padding: "7px 0", borderBottom: "1px solid #1e293b",
-              }}>
+              <div key={l} style={{ display: "flex", justifyContent: "space-between",
+                padding: "7px 0", borderBottom: "1px solid #1e293b" }}>
                 <span style={{ color: "#64748b", fontSize: 12 }}>{l}</span>
                 <span style={{ color: c, fontWeight: 600, fontSize: 12 }}>{v}</span>
               </div>
             ))}
           </div>
-
           <div style={{ background: "#0f172a", borderRadius: 8, padding: 14, border: "1px solid #1e293b" }}>
             <div style={{ color: "#a78bfa", fontWeight: 600, fontSize: 11, textTransform: "uppercase",
-              letterSpacing: "0.08em", marginBottom: 12 }}>
-              System Performance
-            </div>
+              letterSpacing: "0.08em", marginBottom: 12 }}>System Performance</div>
             {[
               ["Active Intersections", intersections.length || 16,                        "#38bdf8"],
               ["Total AI Decisions",   (metrics.total_decisions || 0).toLocaleString(),   "#4ade80"],
@@ -498,10 +646,8 @@ export default function App() {
               ["Pedestrians Detected", metrics.total_pedestrians || 0,                    "#38bdf8"],
               ["Running Cost (USD)",   `$${cost}`,                                        "#a78bfa"],
             ].map(([l, v, c]) => (
-              <div key={l} style={{
-                display: "flex", justifyContent: "space-between",
-                padding: "7px 0", borderBottom: "1px solid #1e293b",
-              }}>
+              <div key={l} style={{ display: "flex", justifyContent: "space-between",
+                padding: "7px 0", borderBottom: "1px solid #1e293b" }}>
                 <span style={{ color: "#64748b", fontSize: 12 }}>{l}</span>
                 <span style={{ color: c, fontWeight: 600, fontSize: 12 }}>{v}</span>
               </div>
@@ -513,43 +659,54 @@ export default function App() {
       {/* Features Tab */}
       {tab === "features" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {[
-            { title: "Single Intersection Control", color: "#38bdf8", items: [
-              ["Real-time queue monitoring",    "Per-lane vehicle counts updated every second"],
-              ["Pedestrian detection",          "Crossing demand tracked at each node"],
-              ["Emergency vehicle pre-emption", "Corridor cleared in under 1 second"],
-              ["Incident detection",            "Congestion spikes and breakdowns flagged automatically"],
-              ["Weather-adaptive timing",       "Rain and fog extend green phases proportionally"],
-              ["Traffic density analysis",      "Flow rate and throughput computed per intersection"],
-            ]},
-            { title: "Network Coordination", color: "#4ade80", items: [
-              ["Multi-agent RL coordination",   "16 independent DQN agents across 4×4 grid"],
-              ["Optimised signal timing",       "55% reduction in average wait time vs fixed-cycle"],
-              ["Bus and transit priority",      "Buses trigger immediate phase change on arrival"],
-              ["Emissions tracking",            "CO₂ savings calculated vs fixed-time baseline"],
-              ["Dynamic condition response",    "Weather, incidents and emergencies all affect timing"],
-              ["Green wave progression",        "Coordinated phase offsets reduce stop frequency"],
-            ]},
-            { title: "Data Sources", color: "#f0c419", items: [
-              ["KITTI Dataset",                 "Vehicle detection and classification benchmarking"],
-              ["nuScenes",                      "Multi-sensor urban driving data reference"],
-              ["Albany UA-DETRAC",              "Real-world vehicle tracking dataset"],
-              ["SUMO RESCO 4×4 Grid",           "Simulation network — NeurIPS 2021 benchmark"],
-              ["Live traffic video",            "YOLOv8 detection on real highway footage"],
-            ]},
-            { title: "Technical Stack", color: "#a78bfa", items: [
-              ["YOLOv8 Nano",                   "Vehicle, pedestrian and emergency detection"],
-              ["Deep Q-Network (DQN)",          "Trained 200,000 steps via stable-baselines3"],
-              ["FastAPI + WebSocket",           "Sub-second state streaming to dashboard"],
-              ["React + Vite",                  "Live 4×4 grid with real-time KPI updates"],
-              ["Docker Compose",                "Single-command full-stack deployment"],
-              ["AWS Free Tier",                 "$0/month operational cost at demo scale"],
-            ]},
-          ].map(panel => (
-            <div key={panel.title} style={{
-              background: "#0f172a", borderRadius: 8, padding: 14,
-              border: `1px solid ${panel.color}22`,
-            }}>
+   {[
+  {
+    title: "Single Intersection Control",
+    color: "#38bdf8",
+    items: [
+      ["Real-time queue monitoring", "Per-lane vehicle counts updated every second"],
+      ["Pedestrian detection", "Crossing demand tracked at each node"],
+      ["Emergency vehicle pre-emption", "Priority corridor created for emergency vehicles"],
+      ["Incident detection", "Congestion spikes and abnormal traffic conditions detected automatically"],
+      ["Weather-adaptive timing", "Signal timing adjusts dynamically based on weather conditions"],
+    ],
+  },
+  {
+    title: "Network Coordination",
+    color: "#4ade80",
+    items: [
+      ["Shared Deep Q-Network", "One trained RL policy controls adaptive signal decisions across the 4×4 traffic network"],
+      ["Adaptive signal timing", "Green signal duration optimized using live traffic conditions"],
+      ["Bus and transit priority", "Priority signal allocation for buses and public transport"],
+      ["Emissions tracking", "Estimated CO₂ savings compared with conventional fixed-time signals"],
+      ["Dynamic condition response", "Weather, incidents and emergency vehicles influence signal decisions in real time"],
+    ],
+  },
+  {
+    title: "Security & Access",
+    color: "#f0c419",
+    items: [
+      ["JWT Authentication", "Secure token-based login and session management"],
+      ["Role-Based Access Control", "Admin, Operator and Viewer roles with permission-based access"],
+      ["Password hashing", "bcrypt encryption ensures passwords are never stored in plain text"],
+      ["Protected API routes", "Sensitive endpoints require valid authentication tokens"],
+      ["Session management", "JWT tokens automatically expire after 60 minutes"],
+    ],
+  },
+  {
+    title: "Technology Stack",
+    color: "#a78bfa",
+    items: [
+      ["YOLOv8 Nano", "Real-time vehicle, pedestrian and emergency vehicle detection"],
+      ["Deep Q-Network (DQN)", "Adaptive traffic signal optimization trained for 200,000 timesteps using Stable-Baselines3"],
+      ["FastAPI + WebSocket", "Real-time APIs and live dashboard updates"],
+      ["SQLite + SQLAlchemy ORM", "Persistent storage for users, traffic logs and system data"],
+      ["Groq API (Llama 3)", "AI-powered Officer Ray traffic assistant"],
+    ],
+  },
+].map(panel => ( 
+            <div key={panel.title} style={{ background: "#0f172a", borderRadius: 8, padding: 14,
+              border: `1px solid ${panel.color}22` }}>
               <div style={{ color: panel.color, fontWeight: 600, fontSize: 11,
                 textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
                 {panel.title}
@@ -572,6 +729,8 @@ export default function App() {
       <div style={{ textAlign: "center", marginTop: 20, color: "#1e293b", fontSize: 10 }}>
         NEXUS · Multi-Agent RL · Weather Adaptive · Emissions Tracking · Emergency Pre-emption
       </div>
+
+      <OfficerRay />
     </div>
   );
 }

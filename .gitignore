@@ -15,6 +15,18 @@ build/
 .pytest_cache/
 .coverage
 
+# Virtual environments
+venv/
+.venv/
+env/
+
+# SQLite
+*.db
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Node
 node_modules/
 frontend/node_modules/

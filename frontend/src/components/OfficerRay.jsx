@@ -253,18 +253,17 @@ export default function OfficerRay() {
     setHistory(newHistory);
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("http://localhost:8000/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: SYSTEM_PROMPTS[tab],
-          messages: newHistory.slice(-10),
-        }),
+          message: text,
+          tab: tab,
+          history: history.filter(m => m.role !== "system").slice(-10)
+        })
       });
       const data = await res.json();
-      const reply = data.content?.[0]?.text || "Radio's down! Try again, over.";
+      const reply = data.reply || "Radio's down! Try again, over.";
       setMessages(prev => [...prev.slice(0, -1), { role: "assistant", text: reply }]);
       setHistory(prev => [...prev, { role: "assistant", content: reply }]);
       setOfficerState("speaking");
